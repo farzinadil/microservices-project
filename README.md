@@ -1,643 +1,312 @@
-# Microservices Project -- Spring Boot + Spring Cloud
+# Microservices Project — Spring Boot + Spring Cloud
 
-## Overview
+A hands-on microservices project built with Java 17, Spring Boot, Spring Cloud, and PostgreSQL. Five independent services communicate through an API Gateway, register with a Eureka Discovery Server, and share configuration from a central Config Server.
 
-This project is a **hands-on introduction to Microservices
-Architecture** using:
+## Architecture
 
--   Java 17
--   Spring Boot 3
--   Spring Cloud
--   PostgreSQL
--   OpenFeign
--   Eureka Discovery Server
--   Spring Cloud Gateway
--   Config Server
--   Maven
-
-The goal is to help developers understand how multiple independent
-services work together instead of building one large monolithic
-application.
-
-This project consists of five independent applications:
-
-1.  Student Microservice
-2.  School Microservice
-3.  Discovery Server (Eureka)
-4.  API Gateway
-5.  Config Server
-
-------------------------------------------------------------------------
-
-# What is a Monolith?
-
-Before learning microservices, it helps to understand a **monolithic
-application**.
-
-A monolith is a single application containing:
-
--   UI
--   business logic
--   database access
--   APIs
--   authentication
--   all features
-
-inside one deployable unit.
-
-Example:
-
-``` text
-One Application
-├── Student Feature
-├── School Feature
-├── Auth
-├── Billing
-├── Database Access
-└── REST APIs
 ```
-
-### Pros
-
--   Easy to start
--   Simple deployment
--   Good for small projects
-
-### Cons
-
-As applications grow:
-
--   slower deployments
--   harder scaling
--   tightly coupled code
--   one failure can affect entire system
--   difficult team ownership
-
-This motivates microservices.
-
-------------------------------------------------------------------------
-
-# What Are Microservices?
-
-Microservices split an application into **smaller independent
-services**.
-
-Each service:
-
--   owns its own responsibility
--   can be deployed independently
--   communicates over APIs
--   may own its own database
--   scales independently
-
-Example:
-
-``` text
-Student Service
-School Service
-Auth Service
-Payment Service
-Gateway
-Discovery
-```
-
-Instead of one huge application, we have several focused services.
-
-------------------------------------------------------------------------
-
-# Project Architecture
-
-High-level request flow:
-
-``` text
 Client
-   |
-API Gateway
-   |
----------------------
-|                   |
-Student Service   School Service
-        |
-     PostgreSQL
-        |
-Discovery + Config
+  │
+  ▼
+API Gateway  :8222          ← single entry point for all requests
+  │
+  ├──▶ Student Service  :8090   ← manages students, owns students DB
+  │
+  └──▶ School Service   :8070   ← manages schools, calls Student Service
+                                   via OpenFeign
+Supporting services:
+  Config Server   :8888    ← serves config files to all services
+  Discovery       :8761    ← Eureka service registry
 ```
 
-A client never talks directly to internal services.
+## Services
 
-Instead:
+| Service | Port | Description |
+|---|---|---|
+| Config Server | 8888 | Centralized configuration for all services |
+| Discovery (Eureka) | 8761 | Service registry and health dashboard |
+| API Gateway | 8222 | Single entry point, routes to services |
+| Student Service | 8090 | CRUD for students, owns `students` database |
+| School Service | 8070 | CRUD for schools, fetches students via Feign |
 
-1.  Request enters API Gateway
-2.  Gateway routes request
-3.  Services communicate
-4.  Eureka tracks services
-5.  Config Server centralizes configuration
+## Prerequisites
 
-------------------------------------------------------------------------
+- Java 17+
+- Maven (or use the included `mvnw` wrappers)
+- PostgreSQL 16
+- macOS with Homebrew (for the `make` targets)
 
-# Project Components
+## Quick Start
 
-------------------------------------------------------------------------
+### 1. One-command startup
 
-# 1. Student Microservice
-
-Folder:
-
-``` text
-student/
+```bash
+make up
 ```
 
-## Purpose
+This will:
+1. Start PostgreSQL if it isn't running
+2. Start all five services in the correct order
+3. Wait for each to be healthy before starting the next
+4. Print the URL for every service when done
 
-Responsible for:
+Expected output:
 
--   creating students
--   retrieving students
--   storing student information
--   associating students with schools
+```
+  ✓ PostgreSQL already running
+Starting config-server...
+  ✓ config-server is ready (port 8888)
+Starting discovery...
+  ✓ discovery is ready (port 8761)
+Starting gateway...
+  ✓ gateway is ready (port 8222)
+Starting student service...
+  ✓ student is ready (port 8090)
+Starting school service...
+  ✓ school is ready (port 8070)
 
-This service owns student data.
+All services are up:
+  Config Server  →  http://localhost:8888
+  Discovery      →  http://localhost:8761
+  Gateway        →  http://localhost:8222
+  Student        →  http://localhost:8090
+  School         →  http://localhost:8070
 
-Typical fields:
-
--   id
--   firstName
--   lastName
--   email
--   schoolId
-
-## Technology Used
-
--   Spring Boot
--   Spring Web
--   Spring Data JPA
--   PostgreSQL
--   Lombok
-
-## Example APIs
-
-Create Student:
-
-``` http
-POST /api/v1/students
+  API entry point: http://localhost:8222
 ```
 
-Get Students:
+### 2. Stop everything
 
-``` http
-GET /api/v1/students
+```bash
+make down
 ```
 
-Get Students by School:
+### 3. Other commands
 
-``` http
-GET /api/v1/students/school/{schoolId}
+```bash
+make status   # show which services are running and their PIDs
+make logs     # tail live logs from all five services
+make help     # print usage
 ```
 
-## Why Separate Service?
+Logs are written to `/tmp/ms-logs/<service>.log`.
 
-Student logic belongs only here.
+---
 
-Other services should not directly manipulate student database tables.
+## First-Time Setup
 
-This keeps ownership clean.
+If this is a fresh clone, the PostgreSQL databases need to exist before running `make up`.
 
-------------------------------------------------------------------------
+```bash
+# Start PostgreSQL
+brew services start postgresql@16
 
-# 2. School Microservice
-
-Folder:
-
-``` text
-school/
+# Create the app user and databases
+psql -h localhost -U $(whoami) -d postgres -c "CREATE USER username WITH PASSWORD 'password';"
+psql -h localhost -U $(whoami) -d postgres -c "CREATE DATABASE students OWNER username;"
+psql -h localhost -U $(whoami) -d postgres -c "CREATE DATABASE schools OWNER username;"
 ```
 
-## Purpose
+Database credentials are configured in the Config Server at:
 
-Responsible for:
-
--   creating schools
--   retrieving schools
--   storing school information
-
-This service owns school data.
-
-Typical fields:
-
--   id
--   name
--   email
-
-## Technology Used
-
--   Spring Boot
--   JPA
--   PostgreSQL
--   OpenFeign
-
-## Example APIs
-
-Create School:
-
-``` http
-POST /api/v1/schools
+```
+config-server/src/main/resources/configurations/students.yml
+config-server/src/main/resources/configurations/schools.yml
 ```
 
-Get Schools:
+Change `username` and `password` in those files to match your PostgreSQL setup.
 
-``` http
-GET /api/v1/schools
+---
+
+## Demo / Testing
+
+All requests go through the **API Gateway on port 8222**. The gateway routes them to the appropriate service — you never need to call the services directly.
+
+### Create schools
+
+```bash
+curl -s -X POST http://localhost:8222/api/v1/schools \
+  -H "Content-Type: application/json" \
+  -d '{"name":"MIT","email":"contact@mit.edu"}'
+
+curl -s -X POST http://localhost:8222/api/v1/schools \
+  -H "Content-Type: application/json" \
+  -d '{"name":"Stanford","email":"info@stanford.edu"}'
 ```
 
-## Important Concept
+### Get all schools
 
-The School service needs student information.
-
-Instead of accessing Student database directly, it makes an API call.
-
-This is a core microservices principle.
-
-------------------------------------------------------------------------
-
-# OpenFeign -- Service-to-Service Communication
-
-## What Problem Does It Solve?
-
-Microservices often need data from other services.
-
-Example:
-
-School service needs:
-
-"Show this school and its students."
-
-Without Feign:
-
-``` java
-RestTemplate
-WebClient
-manual HTTP code
+```bash
+curl -s http://localhost:8222/api/v1/schools
 ```
 
-OpenFeign simplifies this.
-
-Example:
-
-``` java
-@FeignClient(name="student-service")
+```json
+[
+  {"id": 1, "name": "MIT",      "email": "contact@mit.edu"},
+  {"id": 2, "name": "Stanford", "email": "info@stanford.edu"}
+]
 ```
 
-Then:
+### Create students
 
-``` java
-client.findStudents()
+```bash
+# Two students at MIT (schoolId 1)
+curl -s -X POST http://localhost:8222/api/v1/students \
+  -H "Content-Type: application/json" \
+  -d '{"firstname":"Alice","lastname":"Johnson","email":"alice@mit.edu","schoolId":1}'
+
+curl -s -X POST http://localhost:8222/api/v1/students \
+  -H "Content-Type: application/json" \
+  -d '{"firstname":"Bob","lastname":"Smith","email":"bob@mit.edu","schoolId":1}'
+
+# One student at Stanford (schoolId 2)
+curl -s -X POST http://localhost:8222/api/v1/students \
+  -H "Content-Type: application/json" \
+  -d '{"firstname":"Carol","lastname":"Davis","email":"carol@stanford.edu","schoolId":2}'
 ```
 
-Feign generates the HTTP client automatically.
+### Get all students
 
-## Why This Matters
-
-Benefits:
-
--   cleaner code
--   declarative APIs
--   less boilerplate
--   easier maintenance
-
-In this project:
-
-School Service → Student Service
-
-------------------------------------------------------------------------
-
-# 3. Eureka Discovery Server
-
-Folder:
-
-``` text
-discovery/
+```bash
+curl -s http://localhost:8222/api/v1/students
 ```
 
-## What Is Service Discovery?
-
-In microservices:
-
-Services move.
-
-Ports change.
-
-Containers restart.
-
-Hardcoding:
-
-``` text
-localhost:8090
+```json
+[
+  {"id": 1, "firstname": "Alice", "lastname": "Johnson", "email": "alice@mit.edu",        "schoolId": 1},
+  {"id": 2, "firstname": "Bob",   "lastname": "Smith",   "email": "bob@mit.edu",          "schoolId": 1},
+  {"id": 3, "firstname": "Carol", "lastname": "Davis",   "email": "carol@stanford.edu",   "schoolId": 2}
+]
 ```
 
-becomes fragile.
+### Get students by school
 
-We need dynamic discovery.
-
-------------------------------------------------------------------------
-
-## What Eureka Does
-
-Eureka acts like a **phonebook for services**.
-
-Services register themselves.
-
-Example:
-
-``` text
-Student Service -> I am running at 8090
-School Service -> I am running at 8070
+```bash
+curl -s http://localhost:8222/api/v1/students/school/1   # MIT students
+curl -s http://localhost:8222/api/v1/students/school/2   # Stanford students
 ```
 
-Eureka stores this information.
+### Get a school with its students (inter-service call)
 
-When another service needs Student Service:
+This is the key demo endpoint. The School Service calls the Student Service via **OpenFeign** to assemble the response — two services collaborating behind one API call.
 
-It asks Eureka.
-
-------------------------------------------------------------------------
-
-## Real-World Analogy
-
-Think of Eureka like DNS or Contacts.
-
-Instead of remembering phone numbers:
-
-You search by name.
-
-Same idea:
-
-``` text
-student-service
-school-service
+```bash
+curl -s http://localhost:8222/api/v1/schools/with-students/1
 ```
 
-instead of hardcoded URLs.
-
-------------------------------------------------------------------------
-
-## How It Works
-
-1.  Discovery server starts
-2.  Services register
-3.  Services send heartbeats
-4.  Eureka removes dead instances
-
-Benefits:
-
--   resilience
--   dynamic routing
--   scaling support
--   cloud readiness
-
-------------------------------------------------------------------------
-
-# 4. API Gateway
-
-Folder:
-
-``` text
-gateway/
+```json
+{
+  "name": "MIT",
+  "email": "contact@mit.edu",
+  "students": [
+    {"firstname": "Alice", "lastname": "Johnson", "email": "alice@mit.edu"},
+    {"firstname": "Bob",   "lastname": "Smith",   "email": "bob@mit.edu"}
+  ]
+}
 ```
 
-## What Is an API Gateway?
-
-The Gateway is the **front door**.
-
-Clients do not call services directly.
-
-Instead:
-
-``` text
-Client
-  |
-Gateway
-  |
-Services
+```bash
+curl -s http://localhost:8222/api/v1/schools/with-students/2
 ```
 
-------------------------------------------------------------------------
-
-## Why Use Gateway?
-
-Without Gateway:
-
-``` text
-Client → Student
-Client → School
-Client → Auth
+```json
+{
+  "name": "Stanford",
+  "email": "info@stanford.edu",
+  "students": [
+    {"firstname": "Carol", "lastname": "Davis", "email": "carol@stanford.edu"}
+  ]
+}
 ```
 
-Client must know every address.
+### Eureka Dashboard
 
-With Gateway:
+Open [http://localhost:8761](http://localhost:8761) in a browser to see all registered services and their health status.
 
-``` text
-Client → Gateway
+---
+
+## API Reference
+
+### Student Service — `/api/v1/students`
+
+| Method | Path | Description |
+|---|---|---|
+| `POST` | `/api/v1/students` | Create a student |
+| `GET` | `/api/v1/students` | Get all students |
+| `GET` | `/api/v1/students/school/{schoolId}` | Get students by school |
+
+**Student fields:**
+
+```json
+{
+  "firstname": "string",
+  "lastname":  "string",
+  "email":     "string",
+  "schoolId":  1
+}
 ```
 
-Gateway handles routing.
+### School Service — `/api/v1/schools`
 
-------------------------------------------------------------------------
+| Method | Path | Description |
+|---|---|---|
+| `POST` | `/api/v1/schools` | Create a school |
+| `GET` | `/api/v1/schools` | Get all schools |
+| `GET` | `/api/v1/schools/with-students/{schoolId}` | Get school + its students |
 
-## Responsibilities
+**School fields:**
 
-Gateway can:
-
--   route requests
--   security
--   logging
--   monitoring
--   rate limiting
--   authentication
--   traffic management
-
-In this project:
-
-Gateway routes:
-
-``` text
-/api/v1/students/**
-/api/v1/schools/**
+```json
+{
+  "name":  "string",
+  "email": "string"
+}
 ```
 
-to correct services.
+---
 
-------------------------------------------------------------------------
+## Project Structure
 
-## Example
-
-Client:
-
-``` http
-GET /api/v1/students
+```
+microservices-project/
+├── Makefile                          # up / down / status / logs
+├── config-server/                    # Spring Cloud Config Server (:8888)
+│   └── src/main/resources/
+│       ├── application.yml
+│       └── configurations/           # config files served to each service
+│           ├── students.yml
+│           ├── schools.yml
+│           ├── discovery.yml
+│           └── gateway.yml
+├── discovery/                        # Eureka Discovery Server (:8761)
+├── gateway/                          # Spring Cloud Gateway (:8222)
+├── student/                          # Student Microservice (:8090)
+│   └── src/main/java/net/javaguides/student/
+│       ├── Student.java              # JPA entity
+│       ├── StudentRepository.java
+│       ├── StudentService.java
+│       └── StudentController.java
+└── school/                           # School Microservice (:8070)
+    └── src/main/java/net/javaguides/school/
+        ├── School.java               # JPA entity
+        ├── Student.java              # DTO (received from Student Service)
+        ├── FullSchoolResponse.java   # DTO (school + students)
+        ├── SchoolRepository.java
+        ├── SchoolService.java
+        ├── SchoolController.java
+        └── StudentClient.java        # OpenFeign client → Student Service
 ```
 
-Gateway:
+## Technology Stack
 
--   receives request
--   forwards request
--   returns response
-
-Client sees one entry point.
-
-------------------------------------------------------------------------
-
-# 5. Config Server
-
-Folder:
-
-``` text
-config-server/
-```
-
-## What Problem Does It Solve?
-
-Without Config Server:
-
-Every service stores:
-
-``` yaml
-ports
-database urls
-eureka urls
-credentials
-```
-
-inside local files.
-
-Changing configuration becomes painful.
-
-------------------------------------------------------------------------
-
-## Config Server Idea
-
-One central configuration location.
-
-Services load configuration at startup.
-
-Benefits:
-
--   centralized management
--   consistent configuration
--   easier environment handling
--   reduced duplication
-
-------------------------------------------------------------------------
-
-## Example
-
-Instead of:
-
-``` text
-student/application.yml
-school/application.yml
-gateway/application.yml
-```
-
-Config Server stores shared configs.
-
-Services import them.
-
-------------------------------------------------------------------------
-
-# Database Design
-
-This project uses PostgreSQL.
-
-Separate databases are recommended.
-
-Example:
-
-Student DB:
-
-``` text
-students
-```
-
-School DB:
-
-``` text
-schools
-```
-
-This reflects microservices ownership.
-
-Services should not share database tables.
-
-------------------------------------------------------------------------
-
-# Startup Order
-
-Microservices depend on each other.
-
-Recommended order:
-
-1.  Config Server
-2.  Discovery Server
-3.  Gateway
-4.  Student Service
-5.  School Service
-
-This ensures:
-
--   configs available
--   discovery available
--   routing available
--   services register correctly
-
-------------------------------------------------------------------------
-
-# Why This Project Matters
-
-This project introduces several real-world backend concepts:
-
--   REST APIs
--   JPA + PostgreSQL
--   service ownership
--   distributed systems
--   service discovery
--   API gateway routing
--   centralized configuration
--   inter-service communication
-
-These are common in:
-
--   cloud systems
--   enterprise applications
--   fintech
--   distributed platforms
--   modern backend engineering
-
-------------------------------------------------------------------------
-
-# Future Improvements
-
-Potential enhancements:
-
--   Docker
--   Kubernetes
--   Security/JWT
--   Kafka or RabbitMQ
--   Zipkin tracing
--   Circuit Breakers
--   CI/CD deployment
--   AWS deployment
-
-------------------------------------------------------------------------
-
-# Final Takeaway
-
-This project is intentionally small.
-
-The goal is not complexity.
-
-The goal is to understand the building blocks of a modern distributed
-backend system.
-
-Once comfortable with these ideas, larger microservice architectures
-become much easier to understand and build.
+| Technology | Role |
+|---|---|
+| Spring Boot 4 | Application framework |
+| Spring Cloud Gateway (WebMVC) | API routing |
+| Spring Cloud Netflix Eureka | Service discovery |
+| Spring Cloud Config | Centralized configuration |
+| Spring Cloud OpenFeign | Declarative HTTP client |
+| Spring Data JPA + Hibernate | Database access |
+| PostgreSQL | Relational database |
+| Lombok | Boilerplate reduction |
+| Maven | Build tool |
