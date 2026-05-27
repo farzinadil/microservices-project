@@ -1,0 +1,24 @@
+# IntelliJ
+.idea/
+*.iml
+
+# Maven
+target/
+
+# Mac
+.DS_Store
+
+# Logs
+*.log
+
+# Env / secrets
+.env
+
+# VS Code
+.vscode/
+
+# Build outputs
+out/
+
+# Generated files
+dependency-reduced-pom.xml
